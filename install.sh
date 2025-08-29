@@ -56,6 +56,9 @@ install_base() {
     opensuse-tumbleweed)
         zypper refresh && zypper -q install -y wget curl tar timezone
         ;;
+    alpine)
+        apk update && apk add --no-cache wget curl tar tzdata
+        ;;
     *)
         apt-get update && apt-get install -y -q wget curl tar tzdata
         ;;
@@ -177,7 +180,11 @@ install_x-ui() {
 
     # Stop x-ui service and remove old resources
     if [[ -e /usr/local/x-ui/ ]]; then
-        systemctl stop x-ui
+        if [[ "$release" == "alpine" ]]; then
+            rc-service x-ui stop 2>/dev/null
+        else
+            systemctl stop x-ui 2>/dev/null
+        fi
         rm /usr/local/x-ui/ -rf
     fi
 
@@ -201,10 +208,29 @@ install_x-ui() {
     chmod +x /usr/bin/x-ui
     config_after_install
 
-    cp -f x-ui.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable x-ui
-    systemctl start x-ui
+    if [[ "$release" == "alpine" ]]; then
+        # OpenRC service file
+        cat > /etc/init.d/x-ui <<'EOF'
+#!/sbin/openrc-run
+command="/usr/local/x-ui/x-ui"
+command_args="daemon"
+pidfile="/run/x-ui.pid"
+name="x-ui"
+description="x-ui panel"
+depend() {
+    need net
+}
+EOF
+        chmod +x /etc/init.d/x-ui
+        rc-update add x-ui default
+        rc-service x-ui start
+    else
+        cp -f x-ui.service /etc/systemd/system/
+        systemctl daemon-reload
+        systemctl enable x-ui
+        systemctl start x-ui
+    fi
+
     echo -e "${green}x-ui ${tag_version}${plain} installation finished, it is running now..."
     echo -e ""
     echo -e "┌───────────────────────────────────────────────────────┐
